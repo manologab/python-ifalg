@@ -1,4 +1,4 @@
- Python ifalg
+Python ifalg
 ==============
 
 **ifalg** is a Python 3 library to interface with the Linux kernel crypto API.
