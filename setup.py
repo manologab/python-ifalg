@@ -2,7 +2,10 @@ from setuptools import setup, find_packages
 import os
 
 #get package version
-version = __import__('ifalg.version').__version__
+version = {}
+with open(os.path.join('ifalg', 'version.py'), 'r') as fd:
+    exec(fd.read(), version);
+
 
 longDescription = ''
 try:
@@ -15,8 +18,8 @@ except IOError:
 
 setup(
     name='ifalg',
-    version=version,
-    description='Library to interface with Linux kernel crypto API',
+    version=version['__version__'],
+    description='Library to interface with the Linux kernel crypto API',
     long_description=longDescription,
     url='https://github.com/manologab/python-ifalg',
     author='Manolo Ramirez T.',
