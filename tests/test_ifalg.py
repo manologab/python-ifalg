@@ -2,7 +2,7 @@ import unittest
 
 #from ifalg import SKCipher, IV
 from ifalg.linux import IfAlg
-from ifalg.test import cavs
+from tests import cavs
 from ifalg import SKCipher, Hash
 from ifalg.proc_crypto import parseProcCrypto, getAlgMeta
 import six
