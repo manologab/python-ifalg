@@ -1,10 +1,10 @@
-from ifalg.linux import IfAlg, ALG_TYPE_HASH
+from ifalg.linux import IfAlg, ALG_TYPE_HASH, STRATEGY_HEURISTIC
 from ifalg.proc_crypto import getAlgMeta
-import binascii
+from ifalg import utils
 
 class Hash(IfAlg):
     """Kernel Hash Algorithm"""
-    def __init__(self, algName, digestsize=None, key=None,):
+    def __init__(self, algName, digestsize=None, key=None, strategy=STRATEGY_HEURISTIC):
         """Initializes a kernel hash algorithm.
 
         Algorithm names and constrains can be seen in ``/proc/crypto``.
@@ -14,8 +14,8 @@ class Hash(IfAlg):
           digestsize (int): Algorithm digest size, if None the value will be queried to ``/proc/crypto``
           key (str or bytes, optional): The algorithm key if required, the default is None.
         """
-        super(Hash, self).__init__(ALG_TYPE_HASH, algName, key=key)
-        self.connect()
+        super(Hash, self).__init__(ALG_TYPE_HASH, algName, key=key, strategy=strategy)
+        self._connect()
         if digestsize is None:
             self.loadMetadata()
             self.digestsize = self.meta.digestsize
@@ -35,13 +35,17 @@ class Hash(IfAlg):
         """
         
         if data is not None:
-            self.send(data)
-        return self.read(self.digestsize)
+            if data == b'':
+                #empty string must be send
+                self._send(data)
+            else:
+                self.sendData(data)
+        return self._read(self.digestsize)
 
     def hexdigest(self, data=None):
         """Similar to digest but returns hash result as hex string"""
-        reponse = self.digest(data)
-        return binascii.hexlify(reponse).decode()
+        response = self.digest(data)
+        return utils.bytesToHex(response)
         
     def update(self, data):
         """Sends data to the algorithm
@@ -49,7 +53,7 @@ class Hash(IfAlg):
         Params:
           data (bytes): Data to process
         """
-        self.send(data, more = True)
+        self._send(data, more = True)
 
     
     

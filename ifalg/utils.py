@@ -1,4 +1,5 @@
 import six
+import binascii
 
 def strToBytes(data):
     """Returns the data as valid binary sequence
@@ -14,4 +15,8 @@ def strToBytes(data):
         return data
 
     raise ValueError('data must be str or bytes')
+    
+
+def bytesToHex(data):
+    return binascii.hexlify(data).decode()
     

@@ -4,7 +4,10 @@ from cffi import FFI
 from ifalg import utils
 from ifalg.proc_crypto import getAlgMeta
 import os
+import logging 
+import errno
 
+log = logging.getLogger(__name__)
 
 _FFI = FFI()
 _FFI.cdef("""
@@ -19,6 +22,7 @@ _FFI.cdef("""
 #define ALG_OP_ENCRYPT ...
 #define ALG_OP_DECRYPT ...
 #define MSG_MORE ...
+#define PAGE_SIZE ...
 
 typedef unsigned short int sa_family_t;
 typedef unsigned int socklen_t;
@@ -36,14 +40,16 @@ struct sockaddr_alg {
     unsigned char salg_name[64];
 };
 
+int pipe(int pipefd[2]);
 int socket(int domain, int type, int protocol);
 int bind(int sockfd, struct sockaddr *addr, socklen_t addrlen);
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 int close(int fd);
 int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
 ssize_t send(int sockfd, const void *buf, size_t len, int flags);
-ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags);
 ssize_t read(int fd, void *buf, size_t count);
+ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags);
+ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
 
 struct iovec {                    /* Scatter/gather array items */
     void  *iov_base;              /* Starting address */
@@ -80,6 +86,16 @@ struct af_alg_iv {
   uint8_t	iv[0];
 };
 
+//SPLICE
+#define SPLICE_F_MORE ...
+#define SPLICE_F_GIFT ...
+
+typedef ... loff_t;
+ssize_t vmsplice(int fd, const struct iovec *iov,
+                 unsigned long nr_segs, unsigned int flags);
+ssize_t splice(int fd_in, loff_t *off_in, int fd_out,
+               loff_t *off_out, size_t len, unsigned int flags);
+
 """)
 
 _C = _FFI.verify("""
@@ -87,6 +103,9 @@ _C = _FFI.verify("""
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/if_alg.h>
+#include <fcntl.h>
+#include <sys/uio.h>
+#include <sys/user.h>
 
 #ifndef AF_ALG
 #define AF_ALG 38
@@ -98,10 +117,20 @@ _C = _FFI.verify("""
 """, libraries=[])
 
 #Algorithm types
-#aead and rng are not supported yet, ther require kernel >= 3.2
+#aead and rng are not supported yet
 ALG_TYPE_SKCIPHER = 'skcipher'
 ALG_TYPE_HASH = 'hash'
 ALG_TYPES = [ALG_TYPE_SKCIPHER, ALG_TYPE_HASH]
+
+STRATEGY_HEURISTIC = 1
+STRATEGY_SENDMSG = 2
+STRATEGY_SPLICE = 3
+STRATEGY_ALL = (STRATEGY_HEURISTIC,
+                STRATEGY_SENDMSG,
+                STRATEGY_SPLICE)
+
+HEURISTIC_SPLICE_LIMIT = 8192
+MAXPIPELEN = 16 * _C.PAGE_SIZE
 
 class IfAlgError(Exception):
     """Base error class"""
@@ -109,6 +138,10 @@ class IfAlgError(Exception):
 
 class InvalidStateError(IfAlgError):
     """Raised when the agorithm is not ready for an operation"""
+    pass
+
+class InvalidAlgError(IfAlgError):
+    """Raised when an algorithm does not exists"""
     pass
 
 class IOIfAlgError(IfAlgError):
@@ -125,18 +158,21 @@ class IfAlg:
     
     Best use ifalg.SKCipher or ifalg.Hash
     """
-    def __init__(self, algType, algName, key=None, iv=None):
+    def __init__(self, algType, algName, key=None, iv=None, strategy=STRATEGY_HEURISTIC):
         """Initializes a crypto API algorithm
 
-        Params:
+        Args:
           algType (str): Algorithm type, valid values are: ALG_TYPE_SKCIPHER and ALG_TYPE_HASH
           algName (str): Algorithm name
           key (bytes, optional): Algorithm key if necesary, default is None
           iv  (bytes, optional): Algorithm Initial vector, default is None
+          strategy (int, optional): data feeding strategy for the sendData method, must be one of:
+              STRATEGY_SENDMSG: Send all data at once using the sendmsg system call.
+              STRATEGY_SPLICE: Send data in chunks using splice/vmsplice system calls.
+              STRATEGY_HEURISTIC: Use sendmsg if data > 8KBs, else use splice, this is the default.
 
         Raises:
           ValueError: For invalid parameters
-        
         """
         if algType not in ALG_TYPES:
             raise ValueError('algType not supported: %s'%(algType,))
@@ -144,6 +180,10 @@ class IfAlg:
             raise ValueError('algType is required')
         if algName is None:
             raise ValueError('algName is required')
+
+        if strategy not in STRATEGY_ALL:
+            raise ValueError('Invalid strategy')
+        self.strategy = strategy
 
         self.algTypeBytes = utils.strToBytes(algType)
         if len(self.algTypeBytes)>=14:
@@ -161,11 +201,27 @@ class IfAlg:
         #the socket
         self.sockfd = None
         self.fd = None
+
+        #pipes for splice strategy
+        if strategy in (STRATEGY_HEURISTIC, STRATEGY_SPLICE):
+            self._createPipe()
+        else:
+            self.pipe = None
+
+        #buffer to keep alive memory for splice operations
+        self.splicebuffer = None
         
         #algorithm metadata
         self.meta = None
 
-    def connect(self):
+    def _createPipe(self):
+        """Create pipes to use with splice/vmsplice"""
+        self.pipe = _FFI.new('int[]', 2)
+        r = _C.pipe(self.pipe)
+        if r == -1:
+            raise IOIfAlgError('Error creating pipe', _FFI.errno)
+
+    def _connect(self):
         """Establish connection with the AF_ALG socket
 
         Raises:
@@ -187,6 +243,8 @@ class IfAlg:
 
             r = _C.bind(self.sockfd, _FFI.cast('struct sockaddr *', alg), _FFI.sizeof("struct sockaddr_alg"))
             if r == -1:
+                if _FFI.errno == errno.ENOENT:
+                    raise InvalidAlgError('Invalid algorithm: %s'%(self.algName,))
                 raise IOIfAlgError('Error binding socket', _FFI.errno)
 
             self.fd = _C.accept(self.sockfd, _FFI.NULL, _FFI.NULL)
@@ -196,6 +254,10 @@ class IfAlg:
             try:
                 if self.fd > 0:
                     _C.close(fd)
+            except:
+                pass
+
+            try:
                 if self.sockfd > 0:
                     _C.close(sockfd)
             except:
@@ -218,6 +280,9 @@ class IfAlg:
         if self.sockfd > 0:
             _C.close(self.sockfd)
 
+        if self.pipe:
+            _C.close(self.pipe[1])
+            _C.close(self.pipe[0])
 
     def setKey(self, key):
         """Sets the algorithm key"""
@@ -245,12 +310,20 @@ class IfAlg:
             raise IOIfAlgError('Error setting key', _FFI.errno)
         
 
-    def sendmsg(self, data=None, encrypt=True, more=False):
-        """Low level data sending
+    def _sendmsg(self, data=None, encrypt=True, more=False):
+        """Low level data sending using sendmsg system call
 
-        data -- raw data for the algoritm (default: None)
-        encrypt -- True to encrypt, False to decrypt. if None the operation type and the IV are not send (default: True)
-        more -- True to include the MSG_MORE flag (default: False)
+        Args:
+          data (bytes, optional): Raw data to send (default: None)
+          encrypt (boolean, optional): True to encrypt, False to decrypt.
+              if set to None the operation type and the IV are not send. Default is True.
+          more (boolean, optional) True to include the MSG_MORE flag, default is False.
+
+        Returns:
+          int: number of bytes send.
+
+        Raises:
+          InvalidStateError: if not connected
         """
         self._checkConnected()
 
@@ -291,6 +364,9 @@ class IfAlg:
             buf = _FFI.new('char []', bufSize)
 
         msg = _FFI.new('struct msghdr *')
+        msg.msg_flags = 0
+        msg.msg_name = _FFI.NULL
+        msg.msg_namelen = 0
         msg.msg_control = buf
         msg.msg_controllen = bufSize
         if iov is None:
@@ -321,30 +397,139 @@ class IfAlg:
             flags = _C.MSG_MORE
         else:
             flags = 0
-                
+        #log.debug('calling sendmsg(msg(name:%r, namelen:%r, iov:%r, iovlen:%r, control:%r, controllen:%r, flags:%r), flags:%r)',
+        #          msg.msg_name, msg.msg_namelen, msg.msg_iov, msg.msg_iovlen, msg.msg_control, msg.msg_controllen, msg.msg_flags, flags)
         size = _C.sendmsg(self.fd, msg, flags)
         if size == -1:
             raise IOIfAlgError('Error in sendmsg', _FFI.errno)
                              
         return size
             
-    def read(self, size):
-        """Read data from the socket"""
+    def _read(self, size):
+        """Read data from the socket
+
+        Returns:
+          bytes: Data readed
+          
+        Args:
+          size (int): amount of data to read.
+
+        """
         self._checkConnected()
 
         buf = _FFI.new('uint8_t[]', size)
 
         r = _C.read(self.fd, buf, size)
         if r == -1:
-            return IOIfAlgError('Error in read', _FFI.errno)
+            raise IOIfAlgError('Error in read', _FFI.errno)
+
+        if self.splicebuffer:
+            #gc splice buffer
+            self.splicebuffer = None
+        
+        return _FFI.buffer(buf)[:]
+
+    def _recvmsg(self, size):
+        """Low level call to recvmsg
+
+        Args:
+          size (int): Number of bytes to read.
+
+        Returns
+          bytes: Data readed.
+        """
+        buf = _FFI.new('uint8_t[]', size)
+        iov = _FFI.new('struct iovec *')
+        iov.iov_base = buf
+        iov.iov_len = size
+        msg = _FFI.new('struct msghdr *')
+        msg.msg_name = _FFI.NULL
+        msg.msg_namelen = 0
+        msg.msg_control = _FFI.NULL
+        msg.msg_controllen = 0
+        msg.msg_iov = iov
+        msg.msg_iovlen = 1
+        msg.msg_flags = 0
+        r = _C.recvmsg(self.fd, msg, 0)
+        if r == -1:
+            raise IOIfAlgError('Error in recvmsg', _FFI.errno)
 
         return _FFI.buffer(buf)[:]
         
-    def send(self, data, more=False):
-        """Send data to the socket"""
+    def _send(self, data, more=False):
+        """low level call to send system call
+        
+        Args:
+          data (bytes): Data to send.
+          more (boolean, optional): True to include MSG_MORE flag, default is False
+
+        Returns:
+          int: The amount of data sended
+        """
         out = _FFI.new('uint8_t[]', data)
         flags = _C.MSG_MORE if more else 0
         size = _C.send(self.fd, out, len(data), flags)
         if size == -1 :
             raise IOIfAlgError('Error in send', _FFI.errno)
         return size
+
+
+    def _splice(self, data):
+        """Send data to the socket using vmsplice/splice system calls
+
+        Args:
+          data (bytes): Data to send
+        
+        Returns:
+          int: The amount of data sended
+        """
+        dataLength = len(data)
+        remainingLength = dataLength
+        offset = 0
+        iov = _FFI.new('struct iovec *')
+        flags = _C.SPLICE_F_MORE
+        self.splicebuffer = _FFI.new('uint8_t[]', data)
+        while remainingLength:
+            sendLength = MAXPIPELEN if remainingLength > MAXPIPELEN else remainingLength
+            iov.iov_base = _FFI.addressof(self.splicebuffer, offset)
+            iov.iov_len = sendLength
+            rSend = _C.vmsplice(self.pipe[1], iov, 1, flags)
+            if rSend == -1:
+                raise IOIfAlgError("Error in vmsplice", _FFI.errno)
+            if rSend != sendLength:
+                log.warning("vmsplice: not all data received by kernel, sended:%d, received:%d", sendLength, rSend)
+
+            rSend = _C.splice(self.pipe[0], _FFI.NULL, self.fd, _FFI.NULL, rSend, flags)
+            if rSend == -1:
+                raise IOIfAlgError("Error in splice", _FFI.errno)
+
+            remainingLength -= rSend
+            offset += rSend
+
+        return dataLength
+
+
+    def sendData(self, data, encrypt=None):
+        """Send data to the algorithm using the current strategy
+        
+        Args:
+          data (bytes): Data to send
+          encrypt: True to encrypt, False to decrypt and None to only send data to the socket
+
+        Returns:
+          int: The amount of data sended
+        """
+
+        #logic adapted from libkcapi
+        # for large data splice should be faster
+        dataLen = len(data)
+        if ((self.strategy == STRATEGY_HEURISTIC
+                and dataLen <= HEURISTIC_SPLICE_LIMIT)
+                or self.strategy == STRATEGY_SENDMSG):
+            return self._sendmsg(data, encrypt=encrypt)
+        else:
+            if encrypt != None:
+                #send options: encrypt/decrypt and IV
+                self._sendmsg(None, encrypt=encrypt)
+            return self._splice(data)
+

@@ -17,6 +17,56 @@ SKCIPHER = [
         'exp': "275cfc0413d8ccb70513c3859b1d0f72"
     },
     {
+        'name': "cbc(aes)",
+        'enc': True,
+        'msg': "6bc1bee22e409f96e93d7e117393172a",
+        'key': "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+        'iv': "000102030405060708090A0B0C0D0E0F",
+        'exp': "f58c4c04d6e5f1ba779eabfb5f7bfbd6"
+    },
+    {
+        'name': "cbc(aes)",
+        'enc': True,
+        'msg': "ae2d8a571e03ac9c9eb76fac45af8e51",
+        'key': "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+        'iv': "F58C4C04D6E5F1BA779EABFB5F7BFBD6",
+        'exp': "9cfc4e967edb808d679f777bc6702c7d"
+    },
+    {
+        'name': "cbc(aes)",
+        'enc': True,
+        'msg': "30c81c46a35ce411e5fbc1191a0a52ef",
+        'key': "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+        'iv': "9CFC4E967EDB808D679F777BC6702C7D",
+        'exp': "39f23369a9d9bacfa530e26304231461"
+    },
+    {
+        'name': "cbc(aes)",
+        'enc': True,
+        'msg': "f69f2445df4f9b17ad2b417be66c3710",
+        'key': "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+        'iv': "39F23369A9D9BACFA530E26304231461",
+        'exp': "b2eb05e2c39be9fcda6c19078c6a9d1b"
+    },
+    {
+
+        'name': "cbc(aes)",
+        'enc': True,
+        'key': '87725bd43a45608814180773f0e7ab95a3c859d83a2130e884190e44d14c6996',
+        'iv': 'e49651988ebbb72eb8bb80bb9abbca34',
+        'msg': 'bfe5c6354b7a3ff3e192e05775b9b75807de12e38a626b8bf0e12d5fff78e4f1775aa7d792d885162e66d88930f9c3b2cdf8654f56972504803190386270f0aa43645db187af41fcea639b1f8026ccdd0c23e0de37094a8b941ecb7602998a4b2604e69fc04219585d854600e0ad6f99a53b2504043c08b1c3e214d17cde053cbdf91daa999ed5b47c37983ba3ee254bc5c793837daaa8c85cfc12f7f54f699f',
+        'exp': '5b97a9d423f4b97413f388d9a341e727bb339f8e18a3fac2f2fb85abdc8f135deb30054a1afdc9b6ed7da16c55eba6b0d4d10c74e1d9a7cf8edfaeaa684ac0bd9f9d24ba674955c79dc6be32aee1c260b558ff07e3a4d49d24162011ff254db8be078e8ad07e648e6bf5679376cb4321a5ef01afe6ad8816fcc7634669c8c4389295c9241e45fff39f3225f7745032daeebe99d4b19bcb215d1bfdb36eda2c24'
+    },
+    {
+
+        'name': "cbc(aes)",
+        'enc': False,
+        'key': '87725bd43a45608814180773f0e7ab95a3c859d83a2130e884190e44d14c6996',
+        'iv': 'e49651988ebbb72eb8bb80bb9abbca34',
+        'exp': 'bfe5c6354b7a3ff3e192e05775b9b75807de12e38a626b8bf0e12d5fff78e4f1775aa7d792d885162e66d88930f9c3b2cdf8654f56972504803190386270f0aa43645db187af41fcea639b1f8026ccdd0c23e0de37094a8b941ecb7602998a4b2604e69fc04219585d854600e0ad6f99a53b2504043c08b1c3e214d17cde053cbdf91daa999ed5b47c37983ba3ee254bc5c793837daaa8c85cfc12f7f54f699f',
+        'msg': '5b97a9d423f4b97413f388d9a341e727bb339f8e18a3fac2f2fb85abdc8f135deb30054a1afdc9b6ed7da16c55eba6b0d4d10c74e1d9a7cf8edfaeaa684ac0bd9f9d24ba674955c79dc6be32aee1c260b558ff07e3a4d49d24162011ff254db8be078e8ad07e648e6bf5679376cb4321a5ef01afe6ad8816fcc7634669c8c4389295c9241e45fff39f3225f7745032daeebe99d4b19bcb215d1bfdb36eda2c24'
+    },
+    {
         'name': "ecb(aes)",
         'enc': True,
         'msg': "5ec0fd4db8131af11948b3bd2bf062f6",
@@ -53,6 +103,22 @@ SKCIPHER = [
         'msg': "83c882e7698058a998d2020d8dda7a30b9cf6e1fcc359fa533538762dfe83e1d",
         'key': "4089c1587f34c2794089c1587f34c2794089c1587f34c279",
         'exp': "08c4fd965ac65f4cf90845b5b749d8baebe430b676aee67dd777bfb0a1b3b384",
+    },
+    {
+        'name': "cbc(des3_ede)",
+        'enc': True,
+        'key': 'b5cb1504802326c73df186e3e352a20de643b0d63ee30e37',
+        'iv': '43f791134c5647ba',
+        'msg': 'dcc153cef81d6f24',
+        'exp': '92538bd8af18d3ba'
+    },
+    {
+        'name': "cbc(des3_ede)",
+        'enc': True,
+        'key': '9b162a0df8ad9b61c88676e3d586434570b902f12a2046e0',
+        'iv': 'ebd6fefe029ad54b',
+        'msg': 'f4c1c918e77355c8156f0fd778da52bff121ae5f2f44eaf4d2754946d0e10d1f18ce3a0176e69c18b7d20b6e0d0bee5eb5edfe4bd60e4d92adcd86bce72e76f94ee5cbcaa8b01cfddcea2ade575e66ac',
+        'exp': '1ff3c8709f403a8eff291aedf50c010df5c5ff64a8b205f1fce68564798897a390db16ee0d053856b75898009731da290fcc119dad987277aacef694872e880c4bb41471063fae05c89f25e4bd0cad6a'
     },
     {
         'name': "xts(aes)",

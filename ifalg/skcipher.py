@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-from ifalg.linux import IfAlg, ALG_TYPE_SKCIPHER
+from ifalg.linux import IfAlg, ALG_TYPE_SKCIPHER, STRATEGY_HEURISTIC, STRATEGY_SENDMSG, STRATEGY_SPLICE
 
 class SKCipher(IfAlg):
-    """Kernel Symetric Key Cipher Algorithm"""
+    """Kernel Symetric Key Cipher Algorithm for oneshot operations"""
 
-    def __init__(self, cipherName, key, iv=None):
+    def __init__(self, cipherName, key, iv=None, strategy = STRATEGY_HEURISTIC):
         """Initializes the symentric key algorithm
 
         Algorithm names and constrains can be seen in ``/proc/crypto``
@@ -14,8 +14,8 @@ class SKCipher(IfAlg):
           key (str or bytes): cipher key, must comply with cipher size constraints
           iv (str or bytes): Initial Vector, must comply with cipher iv size requirement
         """
-        super(SKCipher, self).__init__(ALG_TYPE_SKCIPHER, cipherName, key=key, iv=iv)
-        self.connect()
+        super(SKCipher, self).__init__(ALG_TYPE_SKCIPHER, cipherName, key=key, iv=iv, strategy = strategy)
+        self._connect()
         self.sendKey()
 
     def crypt(self, data, encrypt=True):
@@ -32,8 +32,8 @@ class SKCipher(IfAlg):
           IOIfAlgError: If an error was returned by the kernel
           InvalidStateError: If the AF_ALG socket is not connected
         """
-        sendedLen = self.sendmsg(data, encrypt=encrypt)
-        return self.read(sendedLen)
+        sendedLen = self.sendData(data, encrypt=encrypt)
+        return self._read(sendedLen)
         
 
     def encrypt(self, data):
@@ -52,3 +52,45 @@ class SKCipher(IfAlg):
         """
         return self.crypt(data, encrypt=False)
 
+class SKCipherStream(IfAlg):
+    """Symetric key cipher algorithm for streaming operations"""
+    def __init__(self, cipherName, key, iv=None, encrypt = True):
+        """Initializes the symentric key algorithm
+
+        Algorithm names and constrains can be seen in ``/proc/crypto``
+
+        Args:
+          cipherName (str): Algorith name, ie: ``cbc(aes)``
+          key (str or bytes): cipher key, must comply with cipher size constraints
+          iv (str or bytes): Initial Vector, must comply with cipher iv size requirement
+          encrypt (bool, optional): True to encrypt, False toe decrypt. Default is True
+        """
+        super(SKCipherStream, self).__init__(ALG_TYPE_SKCIPHER, cipherName, key=key, iv=iv,
+                                             strategy = STRATEGY_SENDMSG)
+        self._connect()
+        self.sendKey()
+        self.encrypt = encrypt
+        self.initialized = False
+
+    def setEncrypt(self, encrypt):
+        if self.initialized:
+            raise InvalidStateError('already initialized')
+
+        self.encrypt = encrypt
+    
+    def write(self, data):
+        """Write data to encrypt/decrypt
+
+        Returns:
+          The amount of data writed
+        """
+        if not self.initialized:
+            self._sendmsg(data=None, encrypt = self.encrypt, more=True)
+            self.initialized = True
+
+        r = self._sendmsg(data, encrypt=None, more=True)
+        return r
+
+    def read(self, size):
+        """Read encrypted/decrypted data"""
+        return self._recvmsg(size)
