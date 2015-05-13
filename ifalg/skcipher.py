@@ -54,6 +54,7 @@ class SKCipher(IfAlg):
 
 class SKCipherStream(IfAlg):
     """Symetric key cipher algorithm for streaming operations"""
+
     def __init__(self, cipherName, key, iv=None, encrypt = True):
         """Initializes the symentric key algorithm
 
@@ -61,9 +62,9 @@ class SKCipherStream(IfAlg):
 
         Args:
           cipherName (str): Algorith name, ie: ``cbc(aes)``
-          key (str or bytes): cipher key, must comply with cipher size constraints
-          iv (str or bytes): Initial Vector, must comply with cipher iv size requirement
-          encrypt (bool, optional): True to encrypt, False toe decrypt. Default is True
+          key (bytes): cipher key, must comply with cipher size constraints
+          iv (bytes, optional): Initial Vector, must comply with cipher iv size requirement.
+          encrypt (bool, optional): True to encrypt, False to decrypt. Default is True
         """
         super(SKCipherStream, self).__init__(ALG_TYPE_SKCIPHER, cipherName, key=key, iv=iv,
                                              strategy = STRATEGY_SENDMSG)
@@ -73,6 +74,11 @@ class SKCipherStream(IfAlg):
         self.initialized = False
 
     def setEncrypt(self, encrypt):
+        """Set operation to encrypt or decrypt
+
+        Args:
+          encrypt (boolean): True to encrypt, otherwise decrypt
+        """
         if self.initialized:
             raise InvalidStateError('already initialized')
 

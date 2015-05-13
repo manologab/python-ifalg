@@ -202,11 +202,7 @@ class IfAlg:
         self.sockfd = None
         self.fd = None
 
-        #pipes for splice strategy
-        if strategy in (STRATEGY_HEURISTIC, STRATEGY_SPLICE):
-            self._createPipe()
-        else:
-            self.pipe = None
+        self.pipe = None
 
         #buffer to keep alive memory for splice operations
         self.splicebuffer = None
@@ -234,6 +230,7 @@ class IfAlg:
         try:
             self.sockfd = _C.socket(_C.AF_ALG, _C.SOCK_SEQPACKET, 0)
             if self.sockfd == -1:
+                self.sockfd = None
                 raise IOIfAlgError('Error opening socket', _FFI.errno)
 
             alg = _FFI.new('struct sockaddr_alg *')
@@ -249,19 +246,31 @@ class IfAlg:
 
             self.fd = _C.accept(self.sockfd, _FFI.NULL, _FFI.NULL)
             if self.fd == -1:
+                self.fd = None
                 raise IOIfAlgError('Error during socket accept', _FFI.errno)
-        finally:
+
+        except:
+            #close file descriptors
             try:
-                if self.fd > 0:
-                    _C.close(fd)
+                if self.fd:
+                    _C.close(self.fd)
+                    self.fd = None
             except:
                 pass
 
             try:
-                if self.sockfd > 0:
-                    _C.close(sockfd)
+                if self.sockfd:
+                    _C.close(self.sockfd)
+                    self.sockfd = None
             except:
                 pass
+
+            raise
+
+        #pipes for splice strategy
+        if self.strategy in (STRATEGY_HEURISTIC, STRATEGY_SPLICE):
+            self._createPipe()
+    #end _connect
 
     def loadMetadata(self):
         """Loads algorithm metadata from ``/proc/crypto``
@@ -275,14 +284,19 @@ class IfAlg:
 
     def close(self):
         """Close the socket connections"""
-        if self.fd > 0:
+        if self.fd:
             _C.close(self.fd)
-        if self.sockfd > 0:
+            self.fd = None
+            
+        if self.sockfd:
             _C.close(self.sockfd)
+            self.sockfd = None
 
         if self.pipe:
             _C.close(self.pipe[1])
             _C.close(self.pipe[0])
+            self.pipe = None
+            
 
     def setKey(self, key):
         """Sets the algorithm key"""
@@ -292,13 +306,12 @@ class IfAlg:
         """Sets the Initial Vector"""
         self.iv = None if iv is None else utils.strToBytes(iv)
         
-        
     def _checkConnected(self):
         """Check that the socket connection is established,
         Raises:
           InvalidStateError: if not connected
         """
-        if self.sockfd <=0 or self.fd <=0:
+        if not self.sockfd or not self.fd:
             raise InvalidStateError('Not Connected')
 
     def sendKey(self):
